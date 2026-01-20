@@ -18,6 +18,11 @@ public static class FilesEndpoints
             if (file is null || file.Length == 0)
                 return Results.BadRequest("No file uploaded.");
 
+            // Optional: also enforce per-file limit (defense-in-depth)
+            // (Kestrel/form options already limit, but this is a nice explicit guard)
+            if (file.Length > http.Features.Get<IHttpMaxRequestBodySizeFeature>()?.MaxRequestBodySize)
+                return Results.BadRequest("File too large.");
+
             var detected = detector.Detect(file.FileName, file.ContentType);
             if (!detected.IsKnown)
                 return Results.BadRequest("Unsupported file format (by extension).");
@@ -26,22 +31,16 @@ public static class FilesEndpoints
             if (processor is null)
                 return Results.BadRequest($"No processor registered for format '{detected.FormatId}'.");
 
-            // Create a temp file for sanitized output (no RAM blowups)
+            // Write to temp file so we can still return a clean 400 if invalid
             var tempPath = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid():N}.sanitized");
             await using var tempOut = new FileStream(
-                tempPath,
-                FileMode.CreateNew,
-                FileAccess.Write,
-                FileShare.None,
-                bufferSize: 64 * 1024,
-                useAsync: true);
+                tempPath, FileMode.CreateNew, FileAccess.Write, FileShare.None,
+                bufferSize: 64 * 1024, useAsync: true);
 
             ProcessResult result;
             try
             {
-                // Stream the upload (no CopyTo MemoryStream)
-                await using var input = file.OpenReadStream(); // server still buffers multipart parsing, but this avoids your big allocations
-
+                await using var input = file.OpenReadStream();
                 result = await processor.ProcessAsync(input, tempOut, detected, ct);
 
                 if (!result.Success)
@@ -52,22 +51,22 @@ public static class FilesEndpoints
 
                 await tempOut.FlushAsync(ct);
             }
+            catch (OperationCanceledException)
+            {
+                try { System.IO.File.Delete(tempPath); } catch { }
+                return Results.StatusCode(499); // Client Closed Request (common pattern)
+            }
             catch
             {
                 try { System.IO.File.Delete(tempPath); } catch { }
                 throw;
             }
 
-            // Reopen for reading to return to client
+            // Return temp file as response
             var readStream = new FileStream(
-                tempPath,
-                FileMode.Open,
-                FileAccess.Read,
-                FileShare.Read,
-                bufferSize: 64 * 1024,
-                useAsync: true);
+                tempPath, FileMode.Open, FileAccess.Read, FileShare.Read,
+                bufferSize: 64 * 1024, useAsync: true);
 
-            // Ensure we delete the temp file when the response is done
             http.Response.OnCompleted(() =>
             {
                 try { readStream.Dispose(); } catch { }
@@ -76,13 +75,8 @@ public static class FilesEndpoints
             });
 
             var outName = $"{Path.GetFileNameWithoutExtension(file.FileName)}.sanitized{Path.GetExtension(file.FileName)}";
-            var response = Results.File(
-                readStream,
-                detected.ContentType ?? "application/octet-stream",
-                outName
-            );
+            var response = Results.File(readStream, detected.ContentType ?? "application/octet-stream", outName);
 
-            // Feedback in headers (works well with file download)
             return response
                 .WithHeader("X-Format", detected.FormatId!)
                 .WithHeader("X-Was-Malicious", result.Report!.WasMalicious.ToString().ToLowerInvariant())
@@ -93,7 +87,6 @@ public static class FilesEndpoints
     }
 }
 
-// small helper for adding headers to IResult
 static class ResultHeaderExtensions
 {
     public static IResult WithHeader(this IResult result, string name, string value)
