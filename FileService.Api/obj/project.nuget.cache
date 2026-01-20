@@ -1,8 +1,10 @@
 {
   "version": 2,
-  "dgSpecHash": "ho2VHRGUkxI=",
+  "dgSpecHash": "/zg2HIvy3EY=",
   "success": true,
   "projectFilePath": "C:\\Users\\maaya\\OneDrive\\Desktop\\study\\MenloProject\\FileService.Api\\FileService.Api.csproj",
-  "expectedPackageFiles": [],
+  "expectedPackageFiles": [
+    "C:\\Users\\maaya\\.nuget\\packages\\yamldotnet\\16.3.0\\yamldotnet.16.3.0.nupkg.sha512"
+  ],
   "logs": []
 }

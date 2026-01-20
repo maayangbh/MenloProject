@@ -6,8 +6,11 @@ public static class FilesEndpoints
 {
     public static void MapFilesEndpoints(this WebApplication app)
     {
+
+        var group = app.MapGroup("sanitize");
+        
         // POST /sanitize
-        app.MapPost("/sanitize", static async (IFormFile file) =>
+        group.MapPost("/", static async (IFormFile file) =>
         {
 
             await using var ms = new MemoryStream();
