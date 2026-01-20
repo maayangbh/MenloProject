@@ -123,7 +123,7 @@ Example using `curl` (PowerShell):
 curl.exe -v -o sanitized.abc http://localhost:5037/sanitize -F "file=@MyFile.abc"
 ```
 ---
-## Responses
+### Responses
 
 **Success Response**
 
@@ -148,11 +148,17 @@ curl.exe -v -o sanitized.abc http://localhost:5037/sanitize -F "file=@MyFile.abc
 json
 Copy code
 {
+
   "type": "about:blank",
+  
   "title": "Invalid ABC header",
+  
   "status": 400,
+  
   "detail": "First 3 bytes must be '123'.",
+  
   "code": "InvalidHeader"
+  
 }
 
 ---
@@ -179,7 +185,7 @@ Typical error categories:
 All errors are returned as structured ProblemDetails.
 
 ## Architecture Overview
-
+```
 Client
   |
   | POST /sanitize (multipart/form-data)
@@ -198,144 +204,111 @@ AbcProcessor (stream-based)
   |
   v
 Sanitized output stream
+```
+
 
 ## Key Components
-FilesEndpoints.cs
-Defines the /sanitize API endpoint
 
-Handles file upload
+**FilesEndpoints.cs**
 
-Manages temp file lifecycle
+- Defines the /sanitize API endpoint
 
-Converts processor results into HTTP responses
+- Handles file upload
 
-Returns ProblemDetails on failure
+- Manages temp file lifecycle
 
-FileFormatDetector
-Detects the file format based on file extension
+- Converts processor results into HTTP responses
 
-Returns a DetectedFile object
+- Returns ProblemDetails on failure
 
-Designed to support additional formats in the future
+**FileFormatDetector**
+- Detects the file format based on file extension
 
-FileProcessorRegistry
-Maps format IDs (e.g., "ABC") to processors
+- Returns a DetectedFile object
 
-Enables pluggable format support
+- Designed to support additional formats in the future
 
-IFileProcessor
-Interface for all file processors.
+**FileProcessorRegistry**
 
-csharp
-Copy code
-Task<ProcessResult> ProcessAsync(
-    Stream input,
-    Stream output,
-    DetectedFile detected,
-    CancellationToken ct);
-AbcProcessor
-Implements the ABC format rules
+- Maps format IDs (e.g., "ABC") to processors
 
-Fully streaming implementation
+- Enables pluggable format support
 
-Sanitizes malicious blocks
+**IFileProcessor**
 
-Validates header, body, and footer
+- Interface for all file processors.
 
-Never throws on invalid file content
+**AbcProcessor**
 
-Returns structured ProcessResult failures
+- Implements the ABC format rules
 
-ProcessResult
-Represents the result of file processing.
+- Fully streaming implementation
 
-csharp
-Copy code
-public record ProcessResult(
-    bool Success,
-    SanitizationReportDto? Report,
-    ProcessingError? Error
-);
-ProcessingError
-Structured error returned from processors.
+- Sanitizes malicious blocks
 
-csharp
-Copy code
-public record ProcessingError(
-    ProcessingErrorCode Code,
-    string Detail
-);
-SanitizationReportDto
-Returned on successful sanitization.
+- Validates header, body, and footer
 
-csharp
-Copy code
-public record SanitizationReportDto(
-    bool WasMalicious,
-    int ReplacedBlocks,
-    string Notes
-);
-📈 Scalability & Design Considerations
-Streaming input/output (no full buffering)
+- Never throws on invalid file content
 
-Single-pass parsing and sanitization
+- Returns structured ProcessResult failures
 
-Minimal memory allocation per byte
+**ProcessResult**
 
-Temp file strategy for safe error handling
+- Represents the result of file processing.
 
-Clean separation of concerns
+**SanitizationReportDto**
+- Returned on successful sanitization.
 
-Extensible processor architecture
+---
 
-🚀 Running the Service
+## Scalability & Design Considerations
+- Streaming input/output (no full buffering)
+
+- Single-pass parsing and sanitization
+
+- Minimal memory allocation per byte
+
+- Temp file strategy for safe error handling
+
+- Clean separation of concerns
+
+- Extensible processor architecture
+  
+---
+
+## Running the Service
 powershell
-Copy code
+```
 dotnet run
+```
+
 Service will start on:
 
-arduino
-Copy code
+```
 http://localhost:5037
-🧪 Testing
-Valid file
-powershell
-Copy code
+```
+
+
+## Testing
+### Valid file
+
+```
 curl.exe -v -o out_ok.abc http://localhost:5037/sanitize -F "file=@MyFile.abc"
-type .\out_ok.abc
-Malicious file
-powershell
-Copy code
+```
+
+### Malicious file
+```
 curl.exe -v -o out_sanitized.abc http://localhost:5037/sanitize -F "file=@MyVirus.abc"
-type .\out_sanitized.abc
-Invalid file
-powershell
-Copy code
+```
+
+### Invalid file
+```
 curl.exe -v http://localhost:5037/sanitize -F "file=@BadHeader.abc"
-🔮 Future Extensions
-Support additional file formats (PDF, ZIP, etc.)
+```
 
-Add content-based format detection
+---
 
-Add virus signature scanning
+## Future Extensions
+- Support additional file formats
 
-Add async chunked output streaming
 
-Add OpenAPI / Swagger documentation
-
-Add metrics and logging
-
-🧩 Summary
-This microservice demonstrates:
-
-RESTful API design
-
-Streaming file processing
-
-Clean error modeling
-
-Extensible architecture
-
-Production-style validation and sanitization logic
-
-It is designed as a foundation for a real-world file sanitization service.
