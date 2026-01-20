@@ -85,7 +85,6 @@ A5C
 
 ➡ Output: identical to input.
 
----
 
 ### Malicious File
 
@@ -146,7 +145,6 @@ curl.exe -v -o sanitized.abc http://localhost:5037/sanitize -F "file=@MyFile.abc
 **Example:**
 
 json
-Copy code
 {
 
   "type": "about:blank",
