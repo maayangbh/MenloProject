@@ -30,20 +30,20 @@ The ABC format is a synthetic file format defined for this exercise to demonstra
 An ABC file must follow this structure:
 
 [HEADER]
+
 [BODY]
+
 [FOOTER]
 
 **Header**
 
-- The first 3 bytes must be:
-
+- The first 3 bytes must be: 
 123
 
 **Body**
 
 - The body consists of zero or more blocks.
-- Each block must be exactly 3 bytes:
-
+- Each block must be exactly 3 bytes: 
 A*C
 
 where `*` is a single byte between `'1'` and `'9'`.
