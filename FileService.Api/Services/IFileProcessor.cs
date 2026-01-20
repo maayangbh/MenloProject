@@ -1,18 +1,15 @@
+using FileService.Api.Dtos;
+
 namespace FileService.Api.Services;
 
-public interface IFileSanitizer
+public interface IFileProcessor
 {
     string FormatId { get; }
-    SanitizationResult Sanitize(byte[] input, DetectedFile detected);
+    Task<ProcessResult> ProcessAsync(Stream input, Stream output, DetectedFile detected, CancellationToken ct);
 }
 
-public record SanitizationResult(
-    byte[] SanitizedBytes,
-    Dtos.SanitizationReportDto Report
-    );
-
-public record DetectedFile(
-    bool IsKnown,
-    string? FormatId,
-    string? ContentType
+public record ProcessResult(
+    bool Success,
+    SanitizationReportDto? Report,
+    string? ErrorMessage
 );

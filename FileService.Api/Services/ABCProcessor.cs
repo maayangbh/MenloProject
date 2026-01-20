@@ -6,123 +6,128 @@ public class AbcProcessor : IFileProcessor
 {
     public string FormatId => "ABC";
 
-    public ProcessResult Process(byte[] input, DetectedFile detected)
+    public async Task<ProcessResult> ProcessAsync(Stream input, Stream output, DetectedFile detected, CancellationToken ct)
     {
-        // Validate structure
-        if (!TryGetContentBounds(input, out int start, out int end, out var boundsErr))
-            return Fail(boundsErr);
-
-        if (end - start + 1 < 6)
-            return Fail("Invalid ABC file: too short to contain header '123' and footer '789'.");
-
-        // Validate header: first 3 bytes == 123
-        if (input[start] != (byte)'1' || input[start + 1] != (byte)'2' || input[start + 2] != (byte)'3')
-            return Fail("Invalid ABC file: first 3 bytes must be '123'.");
-
-        // Validate footer: last 3 bytes == 789
-        if (input[end - 2] != (byte)'7' || input[end - 1] != (byte)'8' || input[end] != (byte)'9')
-            return Fail("Invalid ABC file: last 3 bytes must be '789'.");
-
-        var output = new List<byte>(input.Length + input.Length / 10); // extra space for replacements. Assume ~10% bad blocks.
         int replaced = 0;
 
-
-        // Sanitization pass
-        // Copy leading whitespace unchanged
-        for (int i = 0; i < start; i++) output.Add(input[i]);
-
-        // Copy header unchanged
-        output.Add((byte)'1'); output.Add((byte)'2'); output.Add((byte)'3');
-
-        int iBody = start + 3;
-        int bodyEnd = end - 3; // inclusive index of last byte before footer begins
-
-        while (iBody <= bodyEnd)
+        // 1) Consume and preserve leading whitespace (optional; you can also reject/ignore it)
+        // We'll write it through unchanged.
+        int b;
+        while (true)
         {
-            // 1) Skip whitespace between blocks
-            while (iBody <= bodyEnd && IsWs(input[iBody]))
+            b = await ReadByteOrEofAsync(input, ct);
+            if (b == -1) return Fail("Invalid ABC file: empty or whitespace-only.");
+            if (!IsWs((byte)b)) break;
+
+            await output.WriteAsync(new[] { (byte)b }, ct);
+        }
+
+        // 2) Now b is first non-ws byte. Header must be '1','2','3' consecutively.
+        if (b != '1') return Fail("Invalid ABC file: first 3 bytes must be '123'.");
+
+        int b2 = await ReadRequiredByteAsync(input, "Invalid ABC file: truncated header (expected '123').", ct);
+        int b3 = await ReadRequiredByteAsync(input, "Invalid ABC file: truncated header (expected '123').", ct);
+
+        if (b2 != '2' || b3 != '3')
+            return Fail("Invalid ABC file: first 3 bytes must be '123'.");
+
+        // Write header
+        await output.WriteAsync(new byte[] { (byte)'1', (byte)'2', (byte)'3' }, ct);
+
+        // 3) Process body until we hit footer '789'
+        // Body rule: whitespace between blocks allowed; otherwise must see blocks A?C.
+        // Footer detection: when we see '7', we check next two bytes are '8' and '9',
+        // then only allow trailing whitespace until EOF.
+        while (true)
+        {
+            // Skip (and preserve) whitespace between blocks
+            int next = await ReadByteOrEofAsync(input, ct);
+            if (next == -1) return Fail("Invalid ABC file: missing footer '789'.");
+
+            while (next != -1 && IsWs((byte)next))
             {
-                output.Add(input[iBody]); // keep formatting
-                iBody++;
+                await output.WriteAsync(new[] { (byte)next }, ct);
+                next = await ReadByteOrEofAsync(input, ct);
+            }
+            if (next == -1) return Fail("Invalid ABC file: missing footer '789'.");
+
+            // Footer?
+            if (next == '7')
+            {
+                int f2 = await ReadRequiredByteAsync(input, "Invalid ABC file: truncated footer (expected '789').", ct);
+                int f3 = await ReadRequiredByteAsync(input, "Invalid ABC file: truncated footer (expected '789').", ct);
+
+                if (f2 != '8' || f3 != '9')
+                    return Fail("Invalid ABC file: last 3 bytes must be '789'.");
+
+                // Write footer
+                await output.WriteAsync(new byte[] { (byte)'7', (byte)'8', (byte)'9' }, ct);
+
+                // After footer: only whitespace allowed until EOF (preserve it)
+                while (true)
+                {
+                    int tail = await ReadByteOrEofAsync(input, ct);
+                    if (tail == -1)
+                    {
+                        var report = new SanitizationReportDto(
+                            WasMalicious: replaced > 0,
+                            ReplacedBlocks: replaced,
+                            Notes: replaced > 0
+                                ? "Replaced invalid ABC blocks (A*C where * not 1-9) with A255C."
+                                : "No invalid ABC blocks found."
+                        );
+                        return new ProcessResult(true, report, null);
+                    }
+
+                    if (!IsWs((byte)tail))
+                        return Fail("Invalid ABC file: extra non-whitespace data after footer '789'.");
+
+                    await output.WriteAsync(new[] { (byte)tail }, ct);
+                }
             }
 
-            if (iBody > bodyEnd)
-                break; // body ended after whitespace
+            // Otherwise must be the start of a block: 'A'
+            if (next != 'A')
+                return Fail($"Invalid ABC file: unexpected byte '{(char)next}' in body. Expected 'A' or footer '789'.");
 
-            // 2) Now we must see a full block starting at iBody
-            if (input[iBody] != (byte)'A')
-                return Fail($"Invalid ABC file: unexpected byte '{(char)input[iBody]}' in body. Expected start of block 'A'.");
+            int mid = await ReadRequiredByteAsync(input, "Invalid ABC file: truncated block (expected A*C).", ct);
+            int last = await ReadRequiredByteAsync(input, "Invalid ABC file: truncated block (expected A*C).", ct);
 
-            // Need exactly two more bytes for A ? C
-            if (iBody + 2 > bodyEnd)
-                return Fail("Invalid ABC file: truncated A*C block.");
-
-            byte mid = input[iBody + 1];
-            byte last = input[iBody + 2];
-
-            // Assume: no whitespace allowed inside block
-            if (IsWs(mid) || IsWs(last))
+            // No whitespace inside blocks
+            if (IsWs((byte)mid) || IsWs((byte)last))
                 return Fail("Invalid ABC file: whitespace is not allowed inside an A*C block.");
 
-            if (last != (byte)'C')
+            if (last != 'C')
                 return Fail("Invalid ABC file: malformed block (expected 'C' as third byte in A*C).");
 
-            bool ok = mid >= (byte)'1' && mid <= (byte)'9';
-            if (ok)
+            // sanitize if mid not '1'..'9'
+            if (mid >= '1' && mid <= '9')
             {
-                output.Add((byte)'A'); output.Add(mid); output.Add((byte)'C');
+                await output.WriteAsync(new byte[] { (byte)'A', (byte)mid, (byte)'C' }, ct);
             }
             else
             {
-                output.Add((byte)'A'); output.Add((byte)'2'); output.Add((byte)'5'); output.Add((byte)'5'); output.Add((byte)'C');
+                await output.WriteAsync(new byte[] { (byte)'A', (byte)'2', (byte)'5', (byte)'5', (byte)'C' }, ct);
                 replaced++;
             }
-
-            iBody += 3;
         }
-
-        // Copy footer
-        output.Add((byte)'7'); output.Add((byte)'8'); output.Add((byte)'9');
-
-        // Copy trailing whitespace unchanged
-        for (int i = end + 1; i < input.Length; i++) output.Add(input[i]);
-
-        var report = new SanitizationReportDto(
-            WasMalicious: replaced > 0,
-            ReplacedBlocks: replaced,
-            Notes: replaced > 0
-                ? "Replaced invalid ABC blocks (A*C where * not 1-9) with A255C."
-                : "No invalid ABC blocks found."
-        );
-
-        return new ProcessResult(
-            Success: true,
-            SanitizedBytes: output.ToArray(),
-            Report: report,
-            ErrorMessage: null
-        );
     }
 
-    private static ProcessResult Fail(string message) =>
-        new(Success: false, SanitizedBytes: null, Report: null, ErrorMessage: message);
-
-    private static bool TryGetContentBounds(byte[] input, out int start, out int end, out string error)
-    {
-        start = 0;
-        while (start < input.Length && IsWs(input[start])) start++;
-
-        end = input.Length - 1;
-        while (end >= 0 && IsWs(input[end])) end--;
-
-        if (start >= input.Length || end < 0)
-        {
-            error = "Invalid ABC file: empty or whitespace-only.";
-            return false;
-        }
-
-        error = "";
-        return true;
-    }
+    private static ProcessResult Fail(string message) => new(false, null, message);
 
     private static bool IsWs(byte b) => b is (byte)' ' or (byte)'\n' or (byte)'\r' or (byte)'\t';
+
+    private static async Task<int> ReadByteOrEofAsync(Stream s, CancellationToken ct)
+    {
+        var buf = new byte[1];
+        int n = await s.ReadAsync(buf, 0, 1, ct);
+        return n == 0 ? -1 : buf[0];
+    }
+
+    private static async Task<int> ReadRequiredByteAsync(Stream s, string errorMessage, CancellationToken ct)
+    {
+        int b = await ReadByteOrEofAsync(s, ct);
+        if (b == -1) throw new InvalidDataException(errorMessage);
+        return b;
+    }
 }
