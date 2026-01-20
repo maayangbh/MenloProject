@@ -10,26 +10,32 @@ public class AbcProcessor : IFileProcessor
     {
         int replaced = 0;
 
+        var one = new byte[1];
+
         // 1) Consume and preserve leading whitespace (optional; you can also reject/ignore it)
         // We'll write it through unchanged.
         int b;
         while (true)
         {
-            b = await ReadByteOrEofAsync(input, ct);
-            if (b == -1) return Fail("Invalid ABC file: empty or whitespace-only.");
+            b = await ReadByteOrEofAsync(input, one, ct);
+            if (b == -1) return Fail(ProcessingErrorCode.EmptyFile, "Empty or whitespace-only.");
             if (!IsWs((byte)b)) break;
 
-            await output.WriteAsync(new[] { (byte)b }, ct);
+            one[0] = (byte)b;
+            await output.WriteAsync(one.AsMemory(0, 1), ct);
         }
 
         // 2) Now b is first non-ws byte. Header must be '1','2','3' consecutively.
-        if (b != '1') return Fail("Invalid ABC file: first 3 bytes must be '123'.");
+        if (b != '1') return Fail(ProcessingErrorCode.InvalidHeader, "First 3 bytes must be '123'.");
 
-        int b2 = await ReadRequiredByteAsync(input, "Invalid ABC file: truncated header (expected '123').", ct);
-        int b3 = await ReadRequiredByteAsync(input, "Invalid ABC file: truncated header (expected '123').", ct);
+        int b2 = await ReadByteOrEofAsync(input, one, ct);
+        int b3 = await ReadByteOrEofAsync(input, one, ct);
+
+        if (b2 == -1 || b3 == -1)
+            return Fail(ProcessingErrorCode.TruncatedFile, "Truncated header (expected '123').");
 
         if (b2 != '2' || b3 != '3')
-            return Fail("Invalid ABC file: first 3 bytes must be '123'.");
+            return Fail(ProcessingErrorCode.InvalidHeader, "First 3 bytes must be '123'.");
 
         // Write header
         await output.WriteAsync(new byte[] { (byte)'1', (byte)'2', (byte)'3' }, ct);
@@ -41,24 +47,28 @@ public class AbcProcessor : IFileProcessor
         while (true)
         {
             // Skip (and preserve) whitespace between blocks
-            int next = await ReadByteOrEofAsync(input, ct);
-            if (next == -1) return Fail("Invalid ABC file: missing footer '789'.");
+            int next = await ReadByteOrEofAsync(input, one, ct);
+            if (next == -1) return Fail(ProcessingErrorCode.InvalidFooter, "Missing footer '789'.");
 
             while (next != -1 && IsWs((byte)next))
             {
-                await output.WriteAsync(new[] { (byte)next }, ct);
-                next = await ReadByteOrEofAsync(input, ct);
+                one[0] = (byte)next;
+                await output.WriteAsync(one.AsMemory(0, 1), ct);
+                next = await ReadByteOrEofAsync(input, one, ct);
             }
-            if (next == -1) return Fail("Invalid ABC file: missing footer '789'.");
+            if (next == -1) return Fail(ProcessingErrorCode.InvalidFooter, "Missing footer '789'.");
 
             // Footer?
             if (next == '7')
             {
-                int f2 = await ReadRequiredByteAsync(input, "Invalid ABC file: truncated footer (expected '789').", ct);
-                int f3 = await ReadRequiredByteAsync(input, "Invalid ABC file: truncated footer (expected '789').", ct);
+                int f2 = await ReadByteOrEofAsync(input, one, ct);
+                int f3 = await ReadByteOrEofAsync(input, one, ct);
+
+                if (f2 == -1 || f3 == -1)
+                    return Fail(ProcessingErrorCode.TruncatedFile, "Truncated footer (expected '789').");
 
                 if (f2 != '8' || f3 != '9')
-                    return Fail("Invalid ABC file: last 3 bytes must be '789'.");
+                    return Fail(ProcessingErrorCode.InvalidFooter, "Last 3 bytes must be '789'.");
 
                 // Write footer
                 await output.WriteAsync(new byte[] { (byte)'7', (byte)'8', (byte)'9' }, ct);
@@ -66,7 +76,7 @@ public class AbcProcessor : IFileProcessor
                 // After footer: only whitespace allowed until EOF (preserve it)
                 while (true)
                 {
-                    int tail = await ReadByteOrEofAsync(input, ct);
+                    int tail = await ReadByteOrEofAsync(input, one, ct);
                     if (tail == -1)
                     {
                         var report = new SanitizationReportDto(
@@ -80,25 +90,28 @@ public class AbcProcessor : IFileProcessor
                     }
 
                     if (!IsWs((byte)tail))
-                        return Fail("Invalid ABC file: extra non-whitespace data after footer '789'.");
+                        return Fail(ProcessingErrorCode.TrailingData, "Extra non-whitespace data after footer '789'.");
 
-                    await output.WriteAsync(new[] { (byte)tail }, ct);
+                    one[0] = (byte)tail;
+                    await output.WriteAsync(one.AsMemory(0, 1), ct);
                 }
             }
 
             // Otherwise must be the start of a block: 'A'
             if (next != 'A')
-                return Fail($"Invalid ABC file: unexpected byte '{(char)next}' in body. Expected 'A' or footer '789'.");
+                return Fail(ProcessingErrorCode.InvalidBlock, $"Unexpected byte '{(char)next}' in body. Expected 'A' or footer '789'.");
 
-            int mid = await ReadRequiredByteAsync(input, "Invalid ABC file: truncated block (expected A*C).", ct);
-            int last = await ReadRequiredByteAsync(input, "Invalid ABC file: truncated block (expected A*C).", ct);
+            int mid = await ReadByteOrEofAsync(input, one, ct);
+            int last = await ReadByteOrEofAsync(input, one, ct);
+
+            if (mid == -1 || last == -1)
+                return Fail(ProcessingErrorCode.TruncatedFile, "Truncated block (expected A*C).");
 
             // No whitespace inside blocks
             if (IsWs((byte)mid) || IsWs((byte)last))
-                return Fail("Invalid ABC file: whitespace is not allowed inside an A*C block.");
-
+                return Fail(ProcessingErrorCode.InvalidBlock, "Whitespace is not allowed inside an A*C block.");
             if (last != 'C')
-                return Fail("Invalid ABC file: malformed block (expected 'C' as third byte in A*C).");
+                return Fail(ProcessingErrorCode.InvalidBlock, "Malformed block (expected 'C' as third byte in A*C).");
 
             // sanitize if mid not '1'..'9'
             if (mid >= '1' && mid <= '9')
@@ -113,21 +126,13 @@ public class AbcProcessor : IFileProcessor
         }
     }
 
-    private static ProcessResult Fail(string message)
-        => new(false, null, new ProcessingError(ProcessingErrorCode.InvalidFormat, message));
+    private static ProcessResult Fail(ProcessingErrorCode code,string message)
+        => new(false, null, new ProcessingError(code, message));
     private static bool IsWs(byte b) => b is (byte)' ' or (byte)'\n' or (byte)'\r' or (byte)'\t';
 
-    private static async Task<int> ReadByteOrEofAsync(Stream s, CancellationToken ct)
+    private static async Task<int> ReadByteOrEofAsync(Stream s, byte[] one, CancellationToken ct)
     {
-        var buf = new byte[1];
-        int n = await s.ReadAsync(buf, 0, 1, ct);
-        return n == 0 ? -1 : buf[0];
-    }
-
-    private static async Task<int> ReadRequiredByteAsync(Stream s, string errorMessage, CancellationToken ct)
-    {
-        int b = await ReadByteOrEofAsync(s, ct);
-        if (b == -1) throw new InvalidDataException(errorMessage);
-        return b;
+        int n = await s.ReadAsync(one.AsMemory(0, 1), ct);
+        return n == 0 ? -1 : one[0];
     }
 }

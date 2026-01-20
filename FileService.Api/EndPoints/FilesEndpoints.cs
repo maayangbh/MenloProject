@@ -73,7 +73,7 @@ public static class FilesEndpoints
                         var err = result.Error!;
 
                         return Results.Problem(
-                            title: "Invalid ABC file",
+                            title: $"Invalid {detected.FormatId} file",
                             detail: err.Detail,
                             statusCode: StatusCodes.Status400BadRequest);
                     }

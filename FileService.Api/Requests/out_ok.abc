@@ -1,9 +1,21 @@
-123
-A1CA3CA7C
-A2C
-A5C
+System.IO.InvalidDataException: Invalid ABC file: truncated footer (expected '789').
+   at FileService.Api.Services.AbcProcessor.ReadRequiredByteAsync(Stream s, String errorMessage, CancellationToken ct) in C:\Users\maaya\OneDrive\Desktop\study\MenloProject\FileService.Api\Services\ABCProcessor.cs:line 130
+   at FileService.Api.Services.AbcProcessor.ProcessAsync(Stream input, Stream output, DetectedFile detected, CancellationToken ct) in C:\Users\maaya\OneDrive\Desktop\study\MenloProject\FileService.Api\Services\ABCProcessor.cs:line 58
+   at FileService.Api.Endpoints.FilesEndpoints.<>c.<<MapFilesEndpoints>b__0_0>d.MoveNext() in C:\Users\maaya\OneDrive\Desktop\study\MenloProject\FileService.Api\EndPoints\FilesEndpoints.cs:line 66
+--- End of stack trace from previous location ---
+   at FileService.Api.Endpoints.FilesEndpoints.<>c.<<MapFilesEndpoints>b__0_0>d.MoveNext() in C:\Users\maaya\OneDrive\Desktop\study\MenloProject\FileService.Api\EndPoints\FilesEndpoints.cs:line 81
+--- End of stack trace from previous location ---
+   at FileService.Api.Endpoints.FilesEndpoints.<>c.<<MapFilesEndpoints>b__0_0>d.MoveNext() in C:\Users\maaya\OneDrive\Desktop\study\MenloProject\FileService.Api\EndPoints\FilesEndpoints.cs:line 82
+--- End of stack trace from previous location ---
+   at Microsoft.AspNetCore.Http.RequestDelegateFactory.ExecuteTaskResult[T](Task`1 task, HttpContext httpContext)
+   at Microsoft.AspNetCore.Http.RequestDelegateFactory.<>c__DisplayClass104_2.<<HandleRequestBodyAndCompileRequestDelegateForForm>b__2>d.MoveNext()
+--- End of stack trace from previous location ---
+   at Microsoft.AspNetCore.Diagnostics.DeveloperExceptionPageMiddlewareImpl.Invoke(HttpContext context)
 
-
-
-
-789
+HEADERS
+=======
+Accept: */*
+Host: localhost:5037
+User-Agent: curl/8.16.0
+Content-Type: multipart/form-data; boundary=------------------------8TqAOUYzBq21SQXhXlAImU
+Content-Length: 221
