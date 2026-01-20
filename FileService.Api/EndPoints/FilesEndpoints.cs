@@ -1,8 +1,10 @@
 using FileService.Api.Services;
+using Microsoft.AspNetCore.Http.Features;
+using FileService.Api.Infrastructure;
+using FileService.Api.Dtos;
+
 
 namespace FileService.Api.Endpoints;
-
-using Microsoft.AspNetCore.Http.Features;
 
 public static class FilesEndpoints
 {
@@ -10,7 +12,7 @@ public static class FilesEndpoints
     {
         var group = app.MapGroup("/sanitize");
 
-        group.MapPost("/", async (
+        group.MapPost("/", async Task<IResult>(
             HttpContext http,
             IFormFile file,
             FileFormatDetector detector,
@@ -18,100 +20,102 @@ public static class FilesEndpoints
             CancellationToken ct) =>
         {
             if (file is null || file.Length == 0)
-                return Results.BadRequest("No file uploaded.");
+                return Results.Problem(
+                    title: "No file uploaded",
+                    detail: "The request did not contain a file.",
+                    statusCode: StatusCodes.Status400BadRequest);
 
-            // Optional: also enforce per-file limit (defense-in-depth)
-            // (Kestrel/form options already limit, but this is a nice explicit guard)
-            if (file.Length > http.Features.Get<IHttpMaxRequestBodySizeFeature>()?.MaxRequestBodySize)
-                return Results.BadRequest("File too large.");
+            var maxSize = http.Features.Get<IHttpMaxRequestBodySizeFeature>()?.MaxRequestBodySize;
+            if (maxSize.HasValue && file.Length > maxSize.Value)
+                return Results.Problem(
+                    title: "File too large",
+                    detail: $"Maximum allowed size is {maxSize.Value} bytes.",
+                    statusCode: StatusCodes.Status413PayloadTooLarge);
 
             var detected = detector.Detect(file.FileName, file.ContentType);
             if (!detected.IsKnown)
-                return Results.BadRequest("Unsupported file format (by extension).");
+                return Results.Problem(
+                    title: "Unsupported file format",
+                    detail: $"Extension '{Path.GetExtension(file.FileName)}' is not supported.",
+                    statusCode: StatusCodes.Status400BadRequest);
+
 
             var processor = registry.Resolve(detected);
             if (processor is null)
-                return Results.BadRequest($"No processor registered for format '{detected.FormatId}'.");
+                return Results.Problem(
+                    title: "Unsupported file format",
+                    detail: $"No processor registered for format '{detected.FormatId}'.",
+                    statusCode: StatusCodes.Status400BadRequest);
 
-            // Write to temp file so we can still return a clean 400 if invalid
             var tempPath = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid():N}.sanitized");
-            await using var tempOut = new FileStream(
-                tempPath, FileMode.CreateNew, FileAccess.Write, FileShare.None,
-                bufferSize: 64 * 1024, useAsync: true);
 
-            ProcessResult result;
             try
             {
-                await using var input = file.OpenReadStream();
-                result = await processor.ProcessAsync(input, tempOut, detected, ct);
+                ProcessResult result;
 
-                if (!result.Success)
+                await using (var tempOut = new FileStream(
+                    tempPath,
+                    FileMode.CreateNew,
+                    FileAccess.Write,
+                    FileShare.None,
+                    bufferSize: 64 * 1024,
+                    useAsync: true))
                 {
-                    try { System.IO.File.Delete(tempPath); } catch { }
-                    return Results.BadRequest(result.ErrorMessage);
-                }
+                    await using var input = file.OpenReadStream();
 
-                await tempOut.FlushAsync(ct);
-            }
-            catch (OperationCanceledException)
-            {
-                try { System.IO.File.Delete(tempPath); } catch { }
-                return Results.StatusCode(499); // Client Closed Request (common pattern)
+                    result = await processor.ProcessAsync(input, tempOut, detected, ct);
+
+                    if (!result.Success)
+                    {
+                        try { System.IO.File.Delete(tempPath); } catch { }
+
+                        // result.Error is guaranteed non-null when Success == false
+                        var err = result.Error!;
+
+                        return Results.Problem(
+                            title: "Invalid ABC file",
+                            detail: err.Detail,
+                            statusCode: StatusCodes.Status400BadRequest);
+                    }
+
+                    await tempOut.FlushAsync(ct);
+                } // tempOut disposed here
+
+                var readStream = new FileStream(
+                    tempPath,
+                    FileMode.Open,
+                    FileAccess.Read,
+                    FileShare.Read,
+                    bufferSize: 64 * 1024,
+                    useAsync: true);
+
+                http.Response.OnCompleted(() =>
+                {
+                    try { readStream.Dispose(); } catch { }
+                    try { System.IO.File.Delete(tempPath); } catch { }
+                    return Task.CompletedTask;
+                });
+
+                var outName =
+                    $"{Path.GetFileNameWithoutExtension(file.FileName)}.sanitized{Path.GetExtension(file.FileName)}";
+
+                var response = Results.File(
+                    readStream,
+                    detected.ContentType ?? "application/octet-stream",
+                    outName);
+
+                return response
+                    .WithHeader("X-Format", detected.FormatId!)
+                    .WithHeader("X-Was-Malicious", result.Report!.WasMalicious.ToString().ToLowerInvariant())
+                    .WithHeader("X-Replaced-Blocks", result.Report!.ReplacedBlocks.ToString())
+                    .WithHeader("X-Notes", result.Report!.Notes);
             }
             catch
             {
                 try { System.IO.File.Delete(tempPath); } catch { }
                 throw;
             }
-
-            // Return temp file as response
-            var readStream = new FileStream(
-                tempPath, FileMode.Open, FileAccess.Read, FileShare.Read,
-                bufferSize: 64 * 1024, useAsync: true);
-
-            http.Response.OnCompleted(() =>
-            {
-                try { readStream.Dispose(); } catch { }
-                try { System.IO.File.Delete(tempPath); } catch { }
-                return Task.CompletedTask;
-            });
-
-            var outName = $"{Path.GetFileNameWithoutExtension(file.FileName)}.sanitized{Path.GetExtension(file.FileName)}";
-            var response = Results.File(readStream, detected.ContentType ?? "application/octet-stream", outName);
-
-            return response
-                .WithHeader("X-Format", detected.FormatId!)
-                .WithHeader("X-Was-Malicious", result.Report!.WasMalicious.ToString().ToLowerInvariant())
-                .WithHeader("X-Replaced-Blocks", result.Report!.ReplacedBlocks.ToString())
-                .WithHeader("X-Notes", result.Report!.Notes);
         })
         .DisableAntiforgery();
     }
 }
-
-static class ResultHeaderExtensions
-{
-    public static IResult WithHeader(this IResult inner, string name, string value)
-        => new HeaderResult(inner, name, value);
-}
-
-sealed class HeaderResult : IResult
-{
-    private readonly IResult _inner;
-    private readonly string _name;
-    private readonly string _value;
-
-    public HeaderResult(IResult inner, string name, string value)
-    {
-        _inner = inner;
-        _name = name;
-        _value = value;
-    }
-
-    public async Task ExecuteAsync(HttpContext httpContext)
-    {
-        httpContext.Response.Headers[_name] = _value;
-        await _inner.ExecuteAsync(httpContext);
-    }
-}
-

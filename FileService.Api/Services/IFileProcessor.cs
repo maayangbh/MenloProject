@@ -11,5 +11,5 @@ public interface IFileProcessor
 public record ProcessResult(
     bool Success,
     SanitizationReportDto? Report,
-    string? ErrorMessage
+    ProcessingError? Error
 );

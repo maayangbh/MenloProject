@@ -113,8 +113,8 @@ public class AbcProcessor : IFileProcessor
         }
     }
 
-    private static ProcessResult Fail(string message) => new(false, null, message);
-
+    private static ProcessResult Fail(string message)
+        => new(false, null, new ProcessingError(ProcessingErrorCode.InvalidFormat, message));
     private static bool IsWs(byte b) => b is (byte)' ' or (byte)'\n' or (byte)'\r' or (byte)'\t';
 
     private static async Task<int> ReadByteOrEofAsync(Stream s, CancellationToken ct)
