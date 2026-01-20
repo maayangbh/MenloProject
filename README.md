@@ -122,8 +122,10 @@ Example using `curl` (PowerShell):
 ```powershell
 curl.exe -v -o sanitized.abc http://localhost:5037/sanitize -F "file=@MyFile.abc"
 ```
+---
+## Responses
 
-Success Response
+**Success Response**
 
   Status: 200 OK
 
@@ -133,14 +135,15 @@ Success Response
 
   Body: sanitized file bytes
 
-Error Response
+**Error Response**
+
   Status: 400 Bad Request (or 413 Payload Too Large)
 
   Content-Type: application/problem+json
 
   Body: RFC-7807 ProblemDetails JSON
 
-Example:
+**Example:**
 
 json
 Copy code
@@ -152,6 +155,7 @@ Copy code
   "code": "InvalidHeader"
 }
 
+---
 
 ## Error Semantics
 Invalid input files are treated as client errors and return HTTP 400.
