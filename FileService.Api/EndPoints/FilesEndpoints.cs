@@ -2,6 +2,8 @@ using FileService.Api.Services;
 
 namespace FileService.Api.Endpoints;
 
+using Microsoft.AspNetCore.Http.Features;
+
 public static class FilesEndpoints
 {
     public static void MapFilesEndpoints(this WebApplication app)
@@ -89,6 +91,27 @@ public static class FilesEndpoints
 
 static class ResultHeaderExtensions
 {
-    public static IResult WithHeader(this IResult result, string name, string value)
-        => Results.Extensions.WithHeader(result, name, value);
+    public static IResult WithHeader(this IResult inner, string name, string value)
+        => new HeaderResult(inner, name, value);
 }
+
+sealed class HeaderResult : IResult
+{
+    private readonly IResult _inner;
+    private readonly string _name;
+    private readonly string _value;
+
+    public HeaderResult(IResult inner, string name, string value)
+    {
+        _inner = inner;
+        _name = name;
+        _value = value;
+    }
+
+    public async Task ExecuteAsync(HttpContext httpContext)
+    {
+        httpContext.Response.Headers[_name] = _value;
+        await _inner.ExecuteAsync(httpContext);
+    }
+}
+

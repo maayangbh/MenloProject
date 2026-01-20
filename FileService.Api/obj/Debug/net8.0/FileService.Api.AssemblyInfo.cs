@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("FileService.Api")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+84e9cd1d44087158cc3714c150e70e4ed9e959b7")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+2218711a761ae21b54ceb5a2448d8ff9242328e3")]
 [assembly: System.Reflection.AssemblyProductAttribute("FileService.Api")]
 [assembly: System.Reflection.AssemblyTitleAttribute("FileService.Api")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
