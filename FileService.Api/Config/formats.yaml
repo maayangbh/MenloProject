@@ -1,0 +1,11 @@
+formats:
+  - id: ABC
+    contentType: text/plain
+    extension: .abc
+    prefix: "123"
+    suffix: "789"
+    blockLength: 3
+    validRegex: "^A[1-9]C$"
+    replacement: "A255C"
+    errorToken: ""
+    notes: "Built-in ABC rules"

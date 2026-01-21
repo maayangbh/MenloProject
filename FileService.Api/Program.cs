@@ -1,6 +1,7 @@
 using FileService.Api.Endpoints;
 using FileService.Api.Services;
 using Microsoft.AspNetCore.Http.Features;
+using System.Linq;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -20,8 +21,16 @@ builder.WebHost.ConfigureKestrel(o =>
 });
 
 builder.Services.AddSingleton<FileFormatDetector>();
-builder.Services.AddSingleton<FileProcessorRegistry>();
-builder.Services.AddSingleton<IFileProcessor, AbcProcessor>();
+builder.Services.AddSingleton<FormatConfigLoader>();
+
+// Register FileProcessorRegistry using DI (avoids calling BuildServiceProvider)
+builder.Services.AddSingleton<FileProcessorRegistry>(sp =>
+{
+    var loader = sp.GetRequiredService<FormatConfigLoader>();
+    var defs = loader.Load();
+    var processors = defs.Select(d => (IFileProcessor)new GenericFileProcessor(d));
+    return new FileProcessorRegistry(processors);
+});
 
 var app = builder.Build();
 app.MapFilesEndpoints();

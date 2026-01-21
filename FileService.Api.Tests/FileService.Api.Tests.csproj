@@ -2,6 +2,7 @@
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>
     <IsPackable>false</IsPackable>
+    <Nullable>enable</Nullable>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="FluentAssertions" Version="8.8.0" />
@@ -15,4 +16,8 @@
   <ItemGroup>
     <ProjectReference Include="..\FileService.Api\FileService.Api.csproj" />
   </ItemGroup>
+
+  <Target Name="RunTestsAfterBuild" AfterTargets="Build">
+    <Exec Command="dotnet test --no-build --nologo" />
+  </Target>
 </Project>
