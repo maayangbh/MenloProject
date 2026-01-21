@@ -47,52 +47,35 @@ public static class FilesEndpoints
                     detail: $"No processor registered for format '{detected.FormatId}'.",
                     statusCode: StatusCodes.Status400BadRequest);
 
-            var tempPath = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid():N}.sanitized");
-
             try
             {
                 ProcessResult result;
 
-                await using (var tempOut = new FileStream(
-                    tempPath,
-                    FileMode.CreateNew,
-                    FileAccess.Write,
-                    FileShare.None,
-                    bufferSize: 64 * 1024,
-                    useAsync: true))
+                var memoryOut = new MemoryStream();
+
+                await using var input = file.OpenReadStream();
+
+                result = await processor.ProcessAsync(input, memoryOut, detected, ct);
+
+                if (!result.Success)
                 {
-                    await using var input = file.OpenReadStream();
+                    try { memoryOut.Dispose(); } catch { }
 
-                    result = await processor.ProcessAsync(input, tempOut, detected, ct);
+                    // result.Error is guaranteed non-null when Success == false
+                    var err = result.Error!;
 
-                    if (!result.Success)
-                    {
-                        try { System.IO.File.Delete(tempPath); } catch { }
+                    return Results.Problem(
+                        title: $"Invalid {detected.FormatId} file",
+                        detail: err.Detail,
+                        statusCode: StatusCodes.Status400BadRequest);
+                }
 
-                        // result.Error is guaranteed non-null when Success == false
-                        var err = result.Error!;
-
-                        return Results.Problem(
-                            title: $"Invalid {detected.FormatId} file",
-                            detail: err.Detail,
-                            statusCode: StatusCodes.Status400BadRequest);
-                    }
-
-                    await tempOut.FlushAsync(ct);
-                } // tempOut disposed here
-
-                var readStream = new FileStream(
-                    tempPath,
-                    FileMode.Open,
-                    FileAccess.Read,
-                    FileShare.Read,
-                    bufferSize: 64 * 1024,
-                    useAsync: true);
+                await memoryOut.FlushAsync(ct);
+                memoryOut.Position = 0;
 
                 http.Response.OnCompleted(() =>
                 {
-                    try { readStream.Dispose(); } catch { }
-                    try { System.IO.File.Delete(tempPath); } catch { }
+                    try { memoryOut.Dispose(); } catch { }
                     return Task.CompletedTask;
                 });
 
@@ -100,7 +83,7 @@ public static class FilesEndpoints
                     $"{Path.GetFileNameWithoutExtension(file.FileName)}.sanitized{Path.GetExtension(file.FileName)}";
 
                 var response = Results.File(
-                    readStream,
+                    memoryOut,
                     detected.ContentType ?? "application/octet-stream",
                     outName);
 
@@ -112,7 +95,6 @@ public static class FilesEndpoints
             }
             catch
             {
-                try { System.IO.File.Delete(tempPath); } catch { }
                 throw;
             }
         })
