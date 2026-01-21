@@ -1,33 +1,7 @@
-# File Sanitization Microservice (ABC Format)
 
-This project implements a RESTful microservice in ASP.NET Core for validating and sanitizing uploaded files.  
-The service detects the file format, validates its structure, sanitizes malicious content according to format-specific rules, and returns a clean version of the file to the client.
+# File Sanitization Microservice
 
-The architecture is designed to be **extensible** and **stream-based**, so additional file formats can be supported without changing the API contract.
-
----
-
-## Features
-
-- REST API for file upload and sanitization  
-- Streaming processing (no full file buffering in memory)  
-- Format detection based on file extension  
-- Pluggable processor architecture (supports multiple formats)  
-- Structured error responses
-- Designed for large files and scalability  
-- Clean API contract:  
-  - `200 OK` → sanitized file  
-  - `4xx` → structured JSON error  
-
----
-
-## Supported File Format: ABC
-
-The ABC format is a synthetic file format defined for this exercise to demonstrate structured parsing, validation, and sanitization logic.
-# File Sanitization Microservice (Multi-Format)
-
-This project implements a RESTful microservice in ASP.NET Core for validating and sanitizing uploaded files.
-The service detects the file format, validates its structure, sanitizes malicious content according to format-specific rules, and returns a clean version of the file to the client.
+This project implements a RESTful microservice in ASP.NET Core for validating and sanitizing uploaded files. The service detects the file format, validates its structure, sanitizes malicious content according to format-specific rules, and returns a clean version of the file to the client.
 
 The architecture is **extensible** and **stream-based**. Additional file formats and rules can be added by editing `FileService.Api/Config/formats.yaml`—no code changes required for most formats.
 
@@ -44,9 +18,10 @@ The architecture is **extensible** and **stream-based**. Additional file formats
 - Clean API contract:
   - `200 OK` → sanitized file
   - `4xx` → structured JSON error
-  - Tests run automatically after build
+- Automated tests run with every build
 
 ---
+
 
 ## Supported File Formats
 
@@ -96,23 +71,56 @@ Formats are defined in `FileService.Api/Config/formats.yaml`. Each entry specifi
 
 ---
 
-## Build, Run, and Test (VS Code)
+
+## Build, Run, and Test
+
+### Local (VS Code or CLI)
 
 1. Open the folder in VS Code.
 2. Build and run the service:
-   ```powershell
-   dotnet build
-   dotnet run --project FileService.Api/FileService.Api.csproj
-   ```
-   Or use the VS Code Run/Debug panel.
+  ```powershell
+  dotnet build
+  dotnet run --project FileService.Api/FileService.Api.csproj
+  ```
+  Or use the VS Code Run/Debug panel.
 3. The service will start at:
-   ```
-   http://localhost:5037
-   ```
+  ```
+  http://localhost:5037
+  ```
 4. Tests run automatically after every build. To run manually:
-   ```powershell
-   dotnet test
-   ```
+  ```powershell
+  dotnet test
+  ```
+
+### Docker
+
+1. Build the Docker image:
+  ```powershell
+  docker build -t fileservice-api .
+  ```
+2. Run the container (exposing port 5037):
+  ```powershell
+  docker run -p 5037:5037 fileservice-api
+  ```
+3. The service will be available at:
+  ```
+  http://localhost:5037
+  ```
+
+**Important:**
+If you add or update the file format configuration (formats.yaml), make sure it is copied to the output directory during build. In `FileService.Api/FileService.Api.csproj`, add:
+
+```xml
+  <ItemGroup>
+   <None Update="Config\formats.yaml">
+    <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+   </None>
+  </ItemGroup>
+```
+
+This ensures the config file is available in the Docker image. If you get errors about unknown or unsupported file extensions, check that formats.yaml is present in the published output and in the container at `/app/Config/formats.yaml`.
+
+You can override the port or environment variables as needed using Docker's `-e` and `-p` options.
 
 ---
 
@@ -293,7 +301,6 @@ This architecture is fully extensible: new formats and rules can be added via `f
 - Single-pass parsing and sanitization
 - Minimal memory allocation per byte
 - Temp file strategy for safe error handling
-- Clean separation of concerns
 - Extensible processor architecture
   
 ---
