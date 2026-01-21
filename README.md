@@ -169,21 +169,39 @@ curl.exe -v -o sanitized.abc http://localhost:5037/sanitize -F "file=@MyFile.abc
 
 ---
 
-## Testing
+
+## Manual Testing with Sample Files
+
+You can manually test the API using sample files or your own files. The sample files provided in `FileService.Api/Samples/` are for demonstration and local testing only—they are not accessible to remote clients.
+
+To test, copy a sample file to your local machine or use your own file, then run:
 
 ### Valid file
 ```powershell
-curl.exe -v -o out_ok.abc http://localhost:5037/sanitize -F "file=@MyFile.abc"
+curl.exe -v -o out_ok.abc http://localhost:5037/sanitize -F "file=@C:/path/to/MyFile.abc"
 ```
 
 ### Malicious file
 ```powershell
-curl.exe -v -o out_sanitized.abc http://localhost:5037/sanitize -F "file=@MyVirus.abc"
+curl.exe -v -o out_sanitized.abc http://localhost:5037/sanitize -F "file=@C:/path/to/MyVirus.abc"
 ```
 
 ### Invalid file
 ```powershell
-curl.exe -v http://localhost:5037/sanitize -F "file=@BadHeader.abc"
+curl.exe -v http://localhost:5037/sanitize -F "file=@C:/path/to/BadHeader.abc"
+```
+
+Replace `C:/path/to/` with the actual path to your file. The `-o out_ok.abc` or `-o out_sanitized.abc` option saves the sanitized output to a new file on your machine.
+
+---
+
+## Automated Tests
+
+Automated tests are included and run with every build. These tests use test data and code in the `FileService.Api.Tests/` project and do not require manual file uploads.
+
+To run all automated tests:
+```powershell
+dotnet test
 ```
 
 ---
