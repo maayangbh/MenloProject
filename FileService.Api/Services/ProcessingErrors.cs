@@ -2,6 +2,7 @@ namespace FileService.Api.Services;
 
 public enum ProcessingErrorCode
 {
+    EmptyFile,
     InvalidHeader,
     InvalidFooter,
     InvalidBlock,
