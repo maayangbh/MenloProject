@@ -204,6 +204,26 @@ To run all automated tests:
 dotnet test
 ```
 
+### Example: Automated Unit Test
+
+Here is an example of a unit test from `GenericFileProcessorTests.cs` that checks a private method using reflection:
+
+```csharp
+[Fact]
+public void IsWs_ReturnsTrueForWhitespace()
+{
+  var type = typeof(GenericFileProcessor);
+  var method = type.GetMethod("IsWs", BindingFlags.NonPublic | BindingFlags.Static);
+  Assert.NotNull(method);
+  Assert.True((method!.Invoke(null, new object[] { (byte)' ' }) as bool?) == true);
+  Assert.True((method!.Invoke(null, new object[] { (byte)'\n' }) as bool?) == true);
+  Assert.True((method!.Invoke(null, new object[] { (byte)'\r' }) as bool?) == true);
+  Assert.True((method!.Invoke(null, new object[] { (byte)'\t' }) as bool?) == true);
+  Assert.False((method!.Invoke(null, new object[] { (byte)'A' }) as bool?) == true);
+}
+```
+This test verifies that the internal whitespace-checking logic works as expected.
+
 ---
 
 ## Error Semantics
@@ -224,26 +244,35 @@ All errors are returned as structured ProblemDetails.
 ---
 
 ## Architecture Overview
+
 ```
 Client
   |
   | POST /sanitize (multipart/form-data)
   |
   v
-FilesEndpoints
+FilesEndpoints (API layer)
   |
   v
-FileFormatDetector ──► DetectedFile
+FileFormatDetector (detects format from config)
   |
   v
-FileProcessorRegistry ──► IFileProcessor
+FileProcessorRegistry (maps format to processor)
   |
   v
-GenericFileProcessor/AbcProcessor (stream-based)
+┌───────────────────────────────┐
+│  GenericFileProcessor         │
+│  (config-driven, supports     │
+│   fixed/variable/regex blocks)│
+│  or custom processor (e.g.    │
+│   AbcProcessor)               │
+└───────────────────────────────┘
   |
   v
 Sanitized output stream
 ```
+
+This architecture is fully extensible: new formats and rules can be added via `formats.yaml` without code changes for most cases. The processor layer supports both config-driven and custom logic.
 
 ---
 
@@ -270,10 +299,12 @@ Sanitized output stream
 ---
 
 ## Future Extensions
-- Support additional file formats (just add to `formats.yaml`)
-- Hot-reload format config
-- More advanced block validation
-- CI integration
+
+The project can be further developed in several directions:
+
+- **Support additional file formats** (just add to `formats.yaml`)
+- **Hot-reload format config**: Allow the service to reload `formats.yaml` without restarting
+- **Plugin system**: Allow custom processors to be loaded as plugins for advanced or proprietary formats
 
 ---
 
@@ -286,44 +317,8 @@ Sanitized output stream
 
 - Temp file strategy for safe error handling
 
-- Clean separation of concerns
-
 - Extensible processor architecture
   
 ---
 
-## Running the Service
-powershell
-```
-dotnet run
-```
-
-Service will start on:
-
-```
-http://localhost:5037
-```
-
-
-## Testing
-### Valid file
-
-```
-curl.exe -v -o out_ok.abc http://localhost:5037/sanitize -F "file=@MyFile.abc"
-```
-
-### Malicious file
-```
-curl.exe -v -o out_sanitized.abc http://localhost:5037/sanitize -F "file=@MyVirus.abc"
-```
-
-### Invalid file
-```
-curl.exe -v http://localhost:5037/sanitize -F "file=@BadHeader.abc"
-```
-
----
-
-## Future Extensions
-- Support additional file formats
 
