@@ -3,7 +3,7 @@
 
 This project implements a RESTful microservice in ASP.NET Core for validating and sanitizing uploaded files. The service detects the file format, validates its structure, sanitizes malicious content according to format-specific rules, and returns a clean version of the file to the client.
 
-The architecture is **extensible** and **stream-based**. Additional file formats and rules can be added by editing `FileService.Api/Config/formats.yaml`—no code changes required for most formats.
+The architecture is **extensible** and **stream-based**. Additional file formats and rules can be added by editing `FileService.Api/Config/formats.yaml`— minimal code changes required for most formats.
 
 ---
 
