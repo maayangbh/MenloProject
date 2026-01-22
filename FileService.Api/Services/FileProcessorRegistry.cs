@@ -15,10 +15,16 @@ public class FileProcessorRegistry
     private readonly ILogger<FileProcessorRegistry> _logger;
     private readonly ILoggerFactory _loggerFactory;
 
-    public FileProcessorRegistry(IEnumerable<FormatDefinition> defs, ILogger<FileProcessorRegistry> logger, ILoggerFactory loggerFactory)
+    // Default constructor used by tests and simple callers: uses NullLoggerFactory
+    public FileProcessorRegistry(IEnumerable<FormatDefinition> defs)
+        : this(defs, Microsoft.Extensions.Logging.Abstractions.NullLoggerFactory.Instance, Microsoft.Extensions.Logging.Abstractions.NullLogger<FileProcessorRegistry>.Instance)
     {
-        _logger = logger;
+    }
+
+    public FileProcessorRegistry(IEnumerable<FormatDefinition> defs, ILoggerFactory loggerFactory, ILogger<FileProcessorRegistry> logger)
+    {
         _loggerFactory = loggerFactory;
+        _logger = logger;
 
         _byExtension = defs
             .Where(d => !string.IsNullOrEmpty(d.Extension))
@@ -48,16 +54,28 @@ public class FileProcessorRegistry
         }
 
         _logger.LogInformation("Creating processor for extension {Extension}", normExt);
-        var procLogger = _loggerFactory.CreateLogger<GenericFileProcessor>();
         try
         {
-            return new GenericFileProcessor(def, procLogger);
+            var procType = def.Spec?.ProcessorType;
+            if (!string.IsNullOrEmpty(procType))
+            {
+                switch (procType.Trim().ToLowerInvariant())
+                {
+                    case "generic":
+                    case "genericfileprocessor":
+                        return new GenericFileProcessor(def, _loggerFactory.CreateLogger<GenericFileProcessor>());
+                    default:
+                        _logger.LogWarning("Unknown processor type '{ProcessorType}' for extension {Extension}; falling back to generic.", procType, normExt);
+                        return new GenericFileProcessor(def, _loggerFactory.CreateLogger<GenericFileProcessor>());
+                }
+            }
+
+            // default: generic processor
+            return new GenericFileProcessor(def, _loggerFactory.CreateLogger<GenericFileProcessor>());
         }
         catch (Exception ex)
         {
-            // Log detailed error for developers/ops
             _logger.LogError(ex, "Error creating processor for extension {Extension}", normExt);
-            // Throw a generic error so callers can return a 500 without exposing internals
             throw new InvalidOperationException("Failed to create processor for the requested format.");
         }
     }

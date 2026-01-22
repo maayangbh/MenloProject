@@ -25,10 +25,9 @@ The architecture is **extensible** and **stream-based**. Additional file formats
 
 ## Supported File Formats
 
-Formats are defined in `FileService.Api/Config/formats.yaml`. The project uses a compact schema where each format has an `id`, a plain `extension` (without a leading dot), an optional `description`, and a nested `spec` block containing validation/sanitization rules.
+Formats are defined in `FileService.Api/Config/formats.yaml`. The project uses a compact schema where each format has a plain `extension` (without a leading dot), an optional `description`, and a nested `spec` block containing validation/sanitization rules.
 
 Top-level fields:
-- `id`: Format identifier (e.g. `ABC`)
 - `description`: Short human-readable description (optional)
 - `extension`: File extension without leading dot (e.g. `abc`)
 - `spec`: Nested object with format-specific rules
@@ -39,300 +38,163 @@ Spec fields:
 - `validBlockRegex`: Regex that must fully match a block to be considered valid
 - `errorBlockReplacement`: Replacement text for invalid blocks
 - `blockPattern`: Alternative variable-block regex (optional)
-- `maxBlockLength`: Maximum allowed block length before treating as invalid (optional)
+# File Sanitization Microservice
 
-Notes:
-- `contentType` is no longer specified in the YAML. The service will use the uploaded file's MIME type if provided, or fall back to `application/octet-stream`.
-- `blockLength` (fixed-size blocks) is no longer required; blocks are validated using regexes (`validBlockRegex` or `blockPattern`).
+This ASP.NET Core microservice validates and sanitizes uploaded files according to format definitions in `FileService.Api/Config/formats.yaml`. The service is streaming-first and extensible: most new formats can be added by editing `formats.yaml` with minimal code changes.
 
-### Example: ABC Format
-
-```yaml
-formats:
-  - id: ABC
-    description: "Built-in ABC rules"
-    extension: abc
-    spec:
-      prefix: "123"
-      suffix: "789"
-      validBlockRegex: "^(A[1-9]C)+$"
-      errorBlockReplacement: "A255C"
-```
-
-### Example: Variable-length Block Format
-
-```yaml
-  - id: XVAR
-    contentType: text/plain
-    extension: .xvar
-    prefix: "321"
-    suffix: "987"
-    blockLength: 0
-    blockPattern: "^X\\d{2,}Y$"
-    maxBlockLength: 4096
-    validRegex: ""
-    replacement: "X0Y"
-    errorToken: ""
-    notes: "Variable-length numeric blocks: XnnY where n is 2 or more digits"
-```
+Target framework: .NET 8 (project builds for `net8.0`).
 
 ---
 
+## Features
+
+- REST API for file upload and sanitization
+- Streaming processing (no full file buffering in memory)
+- Format detection based on extension (configurable in `Config/formats.yaml`)
+- Pluggable processor architecture (config-driven or custom processors)
+- Structured error responses
+- Automated tests included and runnable via `dotnet test`
+
+---
 
 ## Build, Run, and Test
 
-### Local (VS Code or CLI)
+### Local (CLI / VS Code)
 
-1. Open the folder in VS Code.
-2. Build and run the service:
-  ```powershell
-  dotnet build
-  dotnet run --project FileService.Api/FileService.Api.csproj
-  ```
-  Or use the VS Code Run/Debug panel.
-3. The service will start at:
-  ```
-  http://localhost:5037
-  ```
-4. Tests run automatically after every build. To run manually:
-  ```powershell
-  dotnet test
-  ```
+1. Build and run the service from the solution root or project folder:
+
+```powershell
+dotnet build
+dotnet run --project FileService.Api/FileService.Api.csproj
+```
+
+2. By default the development `launchSettings.json` maps the app to `http://localhost:5037` (this can vary if you override `applicationUrl` or use a different profile).
+
+3. Run tests:
+
+```powershell
+dotnet test
+```
 
 ### Docker
 
-1. Build the Docker image:
-  ```powershell
-  docker build -t fileservice-api .
-  ```
-2. Run the container (exposing port 5037):
-  ```powershell
-  docker run -p 5037:5037 fileservice-api
-  ```
-3. The service will be available at:
-  ```
-  http://localhost:5037
-  ```
+1. Build the Docker image from the repository root:
 
-**Important:**
-If you add or update the file format configuration (formats.yaml), make sure it is copied to the output directory during build. In `FileService.Api/FileService.Api.csproj`, add:
-
-```xml
-  <ItemGroup>
-   <None Update="Config\formats.yaml">
-    <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-   </None>
-  </ItemGroup>
+```powershell
+docker build -t fileservice-api .
 ```
 
-This ensures the config file is available in the Docker image. If you get errors about unknown or unsupported file extensions, check that formats.yaml is present in the published output and in the container at `/app/Config/formats.yaml`.
+2. Run the container exposing the default port:
 
-You can override the port or environment variables as needed using Docker's `-e` and `-p` options.
+```powershell
+docker run -p 5037:5037 fileservice-api
+```
+
+3. The service will be accessible at `http://localhost:5037` unless you override the port mapping.
+
+**Important:** ensure `Config/formats.yaml` is copied to the published output. In `FileService.Api/FileService.Api.csproj` include:
+
+```xml
+<ItemGroup>
+  <None Update="Config\formats.yaml">
+    <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+  </None>
+</ItemGroup>
+```
 
 ---
 
 ## API Endpoint
 
-### `POST /sanitize`
+POST `/sanitize` — uploads a file and returns the sanitized bytes on success.
 
-Uploads a file, sanitizes it, and returns the sanitized file.
 
-**Content-Type:**  
-`multipart/form-data`
-
-**Form field name:**  
-`file`
-
-Example using `curl` (PowerShell):
+Example (PowerShell):
 
 ```powershell
 curl.exe -v -o sanitized.abc http://localhost:5037/sanitize -F "file=@MyFile.abc"
 ```
 
----
-### Responses
-
-**Success Response**
-
-  Status: 200 OK
-
-  Content-Type: application/octet-stream
-
-  Content-Disposition: attachment; filename="MyFile.sanitized.abc"
-
-  Body: sanitized file bytes
-
-**Error Response**
-
-  Status: 400 Bad Request (or 413 Payload Too Large)
-
-  Content-Type: application/problem+json
-
-  Body: RFC-7807 ProblemDetails JSON
-
-**Example:**
-
-```json
-{
-  "type": "about:blank",
-  "title": "Invalid ABC header",
-  "status": 400,
-  "detail": "First 3 bytes must be '123'.",
-  "code": "InvalidHeader"
-}
-```
+Responses:
+- `200 OK` — sanitized file (Content-Type: `application/octet-stream`)
+- `4xx` — ProblemDetails JSON describing the error
 
 ---
 
+## Manual Testing with Samples
 
-## Manual Testing with Sample Files
+Sample files are in `FileService.Api/Samples/` for local testing. To test with a sample file:
 
-You can manually test the API using sample files or your own files. The sample files provided in `FileService.Api/Samples/` are for demonstration and local testing only—they are not accessible to remote clients.
-
-To test, copy a sample file to your local machine or use your own file, then run:
-
-### Valid file
 ```powershell
-curl.exe -v -o out_ok.abc http://localhost:5037/sanitize -F "file=@C:/path/to/MyFile.abc"
+curl.exe -v -o out_ok.abc http://localhost:5037/sanitize -F "file=@FileService.Api/Samples/MyFile.abc"
 ```
-
-### Malicious file
-```powershell
-curl.exe -v -o out_sanitized.abc http://localhost:5037/sanitize -F "file=@C:/path/to/MyVirus.abc"
-```
-
-### Invalid file
-```powershell
-curl.exe -v http://localhost:5037/sanitize -F "file=@C:/path/to/BadHeader.abc"
-```
-
-Replace `C:/path/to/` with the actual path to your file. The `-o out_ok.abc` or `-o out_sanitized.abc` option saves the sanitized output to a new file on your machine.
 
 ---
 
 ## Automated Tests
 
-Automated tests are included and run with every build. These tests use test data and code in the `FileService.Api.Tests/` project and do not require manual file uploads.
+Tests are in the `FileService.Api.Tests/` project. From the solution root:
 
-To run all automated tests:
 ```powershell
 dotnet test
 ```
 
-### Example: Automated Unit Test
-
-Here is an example of a unit test from `GenericFileProcessorTests.cs` that checks a private method using reflection:
-
-```csharp
-[Fact]
-public void IsWs_ReturnsTrueForWhitespace()
-{
-  var type = typeof(GenericFileProcessor);
-  var method = type.GetMethod("IsWs", BindingFlags.NonPublic | BindingFlags.Static);
-  Assert.NotNull(method);
-  Assert.True((method!.Invoke(null, new object[] { (byte)' ' }) as bool?) == true);
-  Assert.True((method!.Invoke(null, new object[] { (byte)'\n' }) as bool?) == true);
-  Assert.True((method!.Invoke(null, new object[] { (byte)'\r' }) as bool?) == true);
-  Assert.True((method!.Invoke(null, new object[] { (byte)'\t' }) as bool?) == true);
-  Assert.False((method!.Invoke(null, new object[] { (byte)'A' }) as bool?) == true);
-}
-```
-This test verifies that the internal whitespace-checking logic works as expected.
-
 ---
 
 ## Error Semantics
-Invalid input files are treated as client errors and return HTTP 400.
 
-Typical error categories:
+Invalid input files are treated as client errors (HTTP 400). Typical categories:
 
 - Empty file
-- Invalid header (prefix missing or malformed)
-- Invalid footer (suffix missing or malformed)
+- Invalid header (missing or malformed `prefix`)
+- Invalid footer (missing or malformed `suffix`)
 - Truncated file
 - Invalid or malformed block
-- Unexpected byte in body
+- Unexpected bytes in body
 - Extra data after footer
 
-All errors are returned as structured ProblemDetails.
+All errors are returned as structured `ProblemDetails`.
 
 ---
 
 ## Architecture Overview
 
-```
-Client
-  |
-  | POST /sanitize (multipart/form-data)
-  |
-  v
-FilesEndpoints (API layer)
-  |
-  v
-FileFormatDetector (detects format from config)
-  |
-  v
-FileProcessorRegistry (maps format to processor)
-  |
-  v
-┌───────────────────────────────┐
-│  GenericFileProcessor         │
-│  (config-driven, supports     │
-│   fixed/variable/regex blocks)│
-│  or custom processor (e.g.    │
-│   AbcProcessor)               │
-└───────────────────────────────┘
-  |
-  v
-Sanitized output stream
-```
+This section explains the request flow, responsibilities of the main components, and key runtime considerations (streaming, error handling, and configuration).
 
-This architecture is fully extensible: new formats and rules can be added via `formats.yaml` without code changes for most cases. The processor layer supports both config-driven and custom logic.
+High-level request flow:
 
----
+1. Client uploads a file to `POST /sanitize` (multipart/form-data).
+2. `FilesEndpoints` receives the request, validates basic metadata, and streams the uploaded file to a temporary location or directly into a processor stream.
+3. `FileFormatDetector` determines the candidate format (primarily by extension and the loaded `formats.yaml`).
+4. `FileProcessorRegistry` resolves the appropriate processor implementation for the detected format.
+5. A processor instance (usually `GenericFileProcessor` or a format-specific processor) performs a single-pass, streaming parse/validation/sanitization using the format `spec`.
+6. The processor emits sanitized bytes to the response stream (or writes a sanitized temp file) and produces a `ProcessResult`/report on success or failure.
+7. `FilesEndpoints` converts the processor result into an HTTP response: sanitized bytes on `200 OK`, or structured `ProblemDetails` for errors.
 
-## Key Components
+Key components and responsibilities:
 
-- **FilesEndpoints.cs**: Defines the /sanitize API endpoint, handles file upload, manages temp file lifecycle, converts processor results into HTTP responses, returns ProblemDetails on failure
-- **FileFormatDetector**: Detects the file format based on file extension, returns a DetectedFile object, designed to support additional formats in the future
-- **FileProcessorRegistry**: Maps format IDs (e.g., "ABC") to processors, enables pluggable format support
-- **IFileProcessor**: Interface for all file processors
-- **GenericFileProcessor/AbcProcessor**: Implements format rules, fully streaming, sanitizes malicious blocks, validates header/body/footer, never throws on invalid file content, returns structured ProcessResult failures
-- **ProcessResult**: Represents the result of file processing
-- **SanitizationReportDto**: Returned on successful sanitization
+- **FilesEndpoints**: HTTP layer; implementation in [FileService.Api/EndPoints/FilesEndpoints.cs](FileService.Api/EndPoints/FilesEndpoints.cs) — handles multipart parsing, temporary file lifecycle, streaming response, and converting `ProcessResult` into `ProblemDetails` or file attachments.
+- **FileFormatDetector**: Format detection; implementation in [FileService.Api/Services/FileFormatDetector.cs](FileService.Api/Services/FileFormatDetector.cs) — uses `Config/formats.yaml` entries and basic heuristics to map an input file to a `FormatDefinition`.
+- **FormatConfigLoader**: Config loader; implementation in [FileService.Api/Services/FormatConfigLoader.cs](FileService.Api/Services/FormatConfigLoader.cs) — loads/parses `Config/formats.yaml` at startup (or on demand) and exposes `FormatDefinition` objects.
+- **FileProcessorRegistry**: Resolution layer; implementation in [FileService.Api/Services/FileProcessorRegistry.cs](FileService.Api/Services/FileProcessorRegistry.cs) — holds the mapping of format id/extension → processor factory and creates per-file processor instances.
+- **GenericFileProcessor / Custom Processors**: Core sanitization logic; implementation in [FileService.Api/Services/GenericFileProcessor.cs](FileService.Api/Services/GenericFileProcessor.cs) (and any custom processors) — performs streaming validation, block-level regex checks, replacements, header/footer validation, and produces `ProcessResult`.
+
+Runtime and design considerations:
+
+- Streaming-first: processors operate on streams so large files are processed without full buffering in memory.
+- Single-pass parsing: processors read the input once and write sanitized output as they go to minimize allocations and latency.
+- Temp-file strategy: `FilesEndpoints` may use temporary files to simplify error handling and to avoid partial response emission on failure.
+- Thread-safety & DI: `FileProcessorRegistry` and `FormatConfigLoader` are registered as singletons; processors are instantiated per-file to avoid shared mutable state.
+- Configuration: keep `Config/formats.yaml` in the published output (see project file `CopyToOutputDirectory` settings) so runtime detection works inside containers.
+
+Example request lifecycle (concise):
+
+1. `POST /sanitize` with `file=@MyFile.abc`
+2. Endpoint streams upload → `FileFormatDetector` returns `.abc` → registry resolves `ABC` processor
+3. Processor validates header (`prefix`), iterates blocks, applies `validBlockRegex` or `blockPattern`, replaces invalid blocks, validates footer (`suffix`), streams sanitized bytes
+4. Endpoint returns `200 OK` with `application/octet-stream` and an attachment filename, or `400` with `ProblemDetails` describing the failure
 
 ---
 
-## Scalability & Design Considerations
-- Streaming input/output (no full buffering)
-- Single-pass parsing and sanitization
-- Minimal memory allocation per byte
-- Temp file strategy for safe error handling
-- Extensible processor architecture
-  
----
-
-## Future Extensions
-
-The project can be further developed in several directions:
-
-- **Support additional file formats** (just add to `formats.yaml`)
-- **Hot-reload format config**: Allow the service to reload `formats.yaml` without restarting
-- **Plugin system**: Allow custom processors to be loaded as plugins for advanced or proprietary formats
-
----
-
-## Scalability & Design Considerations
-- Streaming input/output (no full buffering)
-
-- Single-pass parsing and sanitization
-
-- Minimal memory allocation per byte
-
-- Temp file strategy for safe error handling
-
-- Extensible processor architecture
-  
----
 
 

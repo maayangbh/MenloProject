@@ -1,8 +1,9 @@
 using FileService.Api.Services;
 using Microsoft.AspNetCore.Hosting;
-using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.FileProviders;
 using System.IO;
+using System;
+using System.Linq;
 using Xunit;
 
 namespace FileService.Api.Tests;
@@ -52,7 +53,10 @@ public class FileFormatDetectorTests
             ? new PhysicalFileProvider(env.WebRootPath)
             : new NullFileProvider();
         var loader = new FormatConfigLoader(env);
-        return new FileFormatDetector(loader, NullLogger<FileFormatDetector>.Instance);
+        var defs = loader.Load();
+        if (defs.Any(d => string.Equals(d.Extension, "xyz", StringComparison.OrdinalIgnoreCase) || string.Equals(d.Extension, ".xyz", StringComparison.OrdinalIgnoreCase)))
+            throw new InvalidOperationException("TEST-DEBUG: unexpected xyz present in loaded formats: " + string.Join(",", defs.Select(d => d.Extension)));
+        return new FileFormatDetector(loader, Microsoft.Extensions.Logging.Abstractions.NullLogger<FileFormatDetector>.Instance);
     }
 
     private static string FindSamplePath(string sampleName, string fallbackFileName)

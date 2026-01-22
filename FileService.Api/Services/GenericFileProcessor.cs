@@ -30,6 +30,7 @@ public class GenericFileProcessor : IFileProcessor
     public GenericFileProcessor(FormatDefinition def, ILogger<GenericFileProcessor> logger)
     {
         _def = def;
+
         _logger = logger;
 
         // Read format parameters from nested Spec (fall back to sensible defaults)

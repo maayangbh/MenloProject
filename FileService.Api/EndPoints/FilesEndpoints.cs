@@ -2,6 +2,7 @@ using FileService.Api.Services;
 using Microsoft.AspNetCore.Http.Features;
 using FileService.Api.Infrastructure;
 using FileService.Api.Dtos;
+using Microsoft.Extensions.Logging;
 
 
 namespace FileService.Api.Endpoints;
@@ -28,7 +29,7 @@ public static class FilesEndpoints
         {
             if (file is null || file.Length == 0)
             {
-                /// write log of the error/////////////////////////////////
+                // write log of the error
                 return Results.Problem(
                     title: "No file uploaded",
                     detail: "The request did not contain a file.",
@@ -104,8 +105,39 @@ public static class FilesEndpoints
                     return Task.CompletedTask;
                 });
 
-                var outName =
-                    $"{Path.GetFileNameWithoutExtension(file.FileName)}.sanitized{Path.GetExtension(file.FileName)}";
+                var originalName = Path.GetFileName(file.FileName) ?? string.Empty;
+                var ext = Path.GetExtension(originalName);
+                var baseName = Path.GetFileNameWithoutExtension(originalName) ?? string.Empty;
+
+                // Always use the pattern '{baseName}.sanitized{ext}' per request.
+                var outName = $"{baseName}.sanitized{ext}";
+
+                // Attempt to persist the sanitized file to disk for auditing.
+                try
+                {
+                    var loggerFactory = http.RequestServices.GetRequiredService<Microsoft.Extensions.Logging.ILoggerFactory>();
+                    var logger = loggerFactory.CreateLogger(nameof(FilesEndpoints));
+
+                    var config = http.RequestServices.GetService<Microsoft.Extensions.Configuration.IConfiguration>();
+                    var configuredDir = config?.GetValue<string>("SanitizedOutput:Directory");
+                    var outputDir = string.IsNullOrEmpty(configuredDir)
+                        ? Path.Combine(Directory.GetCurrentDirectory(), "SanitizedFiles")
+                        : configuredDir!;
+
+                    Directory.CreateDirectory(outputDir);
+
+                    var bytes = memoryOut.ToArray();
+                    var savePath = Path.Combine(outputDir, outName);
+                    await File.WriteAllBytesAsync(savePath, bytes, ct);
+                    logger.LogInformation("Saved sanitized file to {Path}", savePath);
+                }
+                catch (Exception ex)
+                {
+                    // Log but don't fail the client response; saving is best-effort
+                    var loggerFactory = http.RequestServices.GetService<Microsoft.Extensions.Logging.ILoggerFactory>();
+                    var logger = loggerFactory?.CreateLogger(nameof(FilesEndpoints));
+                    logger?.LogError(ex, "Failed to save sanitized file for {FileName}", outName);
+                }
 
                 var response = Results.File(
                     memoryOut,

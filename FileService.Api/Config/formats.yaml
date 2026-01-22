@@ -6,3 +6,4 @@ formats:
       suffix: "789"
       validBlockRegex: "^(A[1-9]C)*$"
       errorBlockReplacement: "A255C"
+      processorType: "generic"

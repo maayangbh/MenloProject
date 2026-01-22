@@ -36,6 +36,8 @@ public class FormatDefinition
 
         /// <summary>Replacement text used when a block fails validation.</summary>
         public string? ErrorBlockReplacement { get; set; }
+        /// <summary>Optional processor type hint (e.g. "generic").</summary>
+        public string? ProcessorType { get; set; }
     }
 }
 

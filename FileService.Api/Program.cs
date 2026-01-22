@@ -1,9 +1,15 @@
 using FileService.Api.Endpoints;
 using FileService.Api.Services;
 using Microsoft.AspNetCore.Http.Features;
+using Microsoft.Extensions.Logging;
 using System.Linq;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Ensure console logging is registered and at an appropriate level in all environments.
+builder.Logging.ClearProviders();
+builder.Logging.AddConsole();
+builder.Logging.SetMinimumLevel(LogLevel.Information);
 
 // Configure maximum upload size (defaults to 100MB). This centralizes
 // upload size limits in one place and applies them to both model binding
@@ -35,9 +41,9 @@ builder.Services.AddSingleton<FileProcessorRegistry>(sp =>
 {
     var loader = sp.GetRequiredService<FormatConfigLoader>();
     var defs = loader.Load();
-    var logger = sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<FileProcessorRegistry>>();
-    var loggerFactory = sp.GetRequiredService<Microsoft.Extensions.Logging.ILoggerFactory>();
-    return new FileProcessorRegistry(defs, logger, loggerFactory);
+    var loggerFactory = sp.GetRequiredService<ILoggerFactory>();
+    var logger = sp.GetRequiredService<ILogger<FileProcessorRegistry>>();
+    return new FileProcessorRegistry(defs, loggerFactory, logger);
 });
 
 var app = builder.Build();

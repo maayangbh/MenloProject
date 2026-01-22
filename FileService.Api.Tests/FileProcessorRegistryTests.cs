@@ -13,7 +13,7 @@ public class FileProcessorRegistryTests
     public void Resolve_KnownFormat_ReturnsProcessor()
     {
         var def = new FormatDefinition {Extension = ".abc" };
-        var registry = new FileProcessorRegistry(new[] { def }, Microsoft.Extensions.Logging.Abstractions.NullLogger<FileProcessorRegistry>.Instance, Microsoft.Extensions.Logging.Abstractions.NullLoggerFactory.Instance);
+        var registry = new FileProcessorRegistry(new[] { def });
         var detected = new DetectedFile(true, ".abc");
 
         var p = registry.Resolve(detected);
@@ -25,7 +25,7 @@ public class FileProcessorRegistryTests
     public void Resolve_UnknownFormat_ReturnsNull()
     {
         var def = new FormatDefinition {Extension = ".abc" };
-        var registry = new FileProcessorRegistry(new[] { def }, Microsoft.Extensions.Logging.Abstractions.NullLogger<FileProcessorRegistry>.Instance, Microsoft.Extensions.Logging.Abstractions.NullLoggerFactory.Instance);
+        var registry = new FileProcessorRegistry(new[] { def });
         var detected = new DetectedFile(false, null);
 
         var p = registry.Resolve(detected);
@@ -46,7 +46,7 @@ public class FileProcessorRegistryTests
             }
         };
 
-        var registry = new FileProcessorRegistry(new[] { def }, Microsoft.Extensions.Logging.Abstractions.NullLogger<FileProcessorRegistry>.Instance, Microsoft.Extensions.Logging.Abstractions.NullLoggerFactory.Instance);
+        var registry = new FileProcessorRegistry(new[] { def });
         var detected = new DetectedFile(true, ".abc");
 
         // Act & Assert: registry should catch the detailed error and rethrow a generic InvalidOperationException
