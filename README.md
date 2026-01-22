@@ -38,22 +38,6 @@ Spec fields:
 - `validBlockRegex`: Regex that must fully match a block to be considered valid
 - `errorBlockReplacement`: Replacement text for invalid blocks
 - `blockPattern`: Alternative variable-block regex (optional)
-# File Sanitization Microservice
-
-This ASP.NET Core microservice validates and sanitizes uploaded files according to format definitions in `FileService.Api/Config/formats.yaml`. The service is streaming-first and extensible: most new formats can be added by editing `formats.yaml` with minimal code changes.
-
-Target framework: .NET 8 (project builds for `net8.0`).
-
----
-
-## Features
-
-- REST API for file upload and sanitization
-- Streaming processing (no full file buffering in memory)
-- Format detection based on extension (configurable in `Config/formats.yaml`)
-- Pluggable processor architecture (config-driven or custom processors)
-- Structured error responses
-- Automated tests included and runnable via `dotnet test`
 
 ---
 
