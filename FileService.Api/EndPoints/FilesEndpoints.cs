@@ -8,6 +8,13 @@ namespace FileService.Api.Endpoints;
 
 public static class FilesEndpoints
 {
+    /// <summary>
+    /// Registers HTTP endpoints under /sanitize for file upload and sanitization.
+    ///
+    /// The endpoint performs: validation of upload size, format detection by
+    /// extension, resolution of a processor from the registry, processing of
+    /// the file stream, and returning the sanitized file with informative headers.
+    /// </summary>
     public static void MapFilesEndpoints(this WebApplication app)
     {
         var group = app.MapGroup("/sanitize");
@@ -20,11 +27,15 @@ public static class FilesEndpoints
             CancellationToken ct) =>
         {
             if (file is null || file.Length == 0)
+            {
+                /// write log of the error/////////////////////////////////
                 return Results.Problem(
                     title: "No file uploaded",
                     detail: "The request did not contain a file.",
                     statusCode: StatusCodes.Status400BadRequest);
-
+            }
+                
+            
             var maxSize = http.Features.Get<IHttpMaxRequestBodySizeFeature>()?.MaxRequestBodySize;
             if (maxSize.HasValue && file.Length > maxSize.Value)
                 return Results.Problem(
@@ -32,7 +43,7 @@ public static class FilesEndpoints
                     detail: $"Maximum allowed size is {maxSize.Value} bytes.",
                     statusCode: StatusCodes.Status413PayloadTooLarge);
 
-            var detected = detector.Detect(file.FileName, file.ContentType);
+            var detected = detector.Detect(file.FileName);
             if (!detected.IsKnown)
                 return Results.Problem(
                     title: "Unsupported file format",
@@ -40,11 +51,23 @@ public static class FilesEndpoints
                     statusCode: StatusCodes.Status400BadRequest);
 
 
-            var processor = registry.Resolve(detected);
+            IFileProcessor? processor;
+            try
+            {
+                processor = registry.Resolve(detected);
+            }
+            catch (InvalidOperationException)
+            {
+                return Results.Problem(
+                    title: "Internal server error",
+                    detail: "Server failed to create processor for the requested format.",
+                    statusCode: StatusCodes.Status500InternalServerError);
+            }
+
             if (processor is null)
                 return Results.Problem(
                     title: "Unsupported file format",
-                    detail: $"No processor registered for format '{detected.FormatId}'.",
+                    detail: $"No processor registered for extension '{detected.Extension ?? Path.GetExtension(file.FileName)}'.",
                     statusCode: StatusCodes.Status400BadRequest);
 
             try
@@ -64,8 +87,10 @@ public static class FilesEndpoints
                     // result.Error is guaranteed non-null when Success == false
                     var err = result.Error!;
 
+                    // Return a generic invalid-file problem; details are included
+                    // in the response body so clients can surface them.
                     return Results.Problem(
-                        title: $"Invalid {detected.FormatId} file",
+                        title: $"Invalid file",
                         detail: err.Detail,
                         statusCode: StatusCodes.Status400BadRequest);
                 }
@@ -84,11 +109,13 @@ public static class FilesEndpoints
 
                 var response = Results.File(
                     memoryOut,
-                    detected.ContentType ?? "application/octet-stream",
+                    "application/octet-stream",
                     outName);
 
+                // Include extension and sanitization metadata in headers so
+                // callers can quickly inspect what happened.
                 return response
-                    .WithHeader("X-Format", detected.FormatId!)
+                    .WithHeader("X-Extension", detected.Extension ?? Path.GetExtension(file.FileName))
                     .WithHeader("X-Was-Malicious", result.Report!.WasMalicious.ToString().ToLowerInvariant())
                     .WithHeader("X-Replaced-Blocks", result.Report!.ReplacedBlocks.ToString())
                     .WithHeader("X-Notes", result.Report!.Notes);

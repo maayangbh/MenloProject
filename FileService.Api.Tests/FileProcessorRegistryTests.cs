@@ -1,3 +1,4 @@
+using System;
 using System.Threading.Tasks;
 using FileService.Api.Services;
 using Xunit;
@@ -6,33 +7,50 @@ namespace FileService.Api.Tests;
 
 public class FileProcessorRegistryTests
 {
-    private class DummyProcessor : IFileProcessor
-    {
-        public string FormatId => "ABC";
-        public Task<ProcessResult> ProcessAsync(System.IO.Stream input, System.IO.Stream output, DetectedFile detected, System.Threading.CancellationToken ct)
-            => Task.FromResult(new ProcessResult(true, null, null));
-    }
+    
 
     [Fact]
     public void Resolve_KnownFormat_ReturnsProcessor()
     {
-        var registry = new FileProcessorRegistry(new[] { new DummyProcessor() });
-        var detected = new DetectedFile(true, "ABC", "application/octet-stream");
+        var def = new FormatDefinition {Extension = ".abc" };
+        var registry = new FileProcessorRegistry(new[] { def }, Microsoft.Extensions.Logging.Abstractions.NullLogger<FileProcessorRegistry>.Instance, Microsoft.Extensions.Logging.Abstractions.NullLoggerFactory.Instance);
+        var detected = new DetectedFile(true, ".abc");
 
         var p = registry.Resolve(detected);
 
         Assert.NotNull(p);
-        Assert.Equal("ABC", p!.FormatId);
     }
 
     [Fact]
     public void Resolve_UnknownFormat_ReturnsNull()
     {
-        var registry = new FileProcessorRegistry(new[] { new DummyProcessor() });
-        var detected = new DetectedFile(false, null, null);
+        var def = new FormatDefinition {Extension = ".abc" };
+        var registry = new FileProcessorRegistry(new[] { def }, Microsoft.Extensions.Logging.Abstractions.NullLogger<FileProcessorRegistry>.Instance, Microsoft.Extensions.Logging.Abstractions.NullLoggerFactory.Instance);
+        var detected = new DetectedFile(false, null);
 
         var p = registry.Resolve(detected);
 
         Assert.Null(p);
+    }
+
+    [Fact]
+    public void Resolve_ProcessorCreationFailure_ThrowsGenericException()
+    {
+        // Arrange: create a definition that will cause the processor ctor to throw (invalid regex)
+        var def = new FormatDefinition
+        {
+            Extension = ".abc",
+            Spec = new FormatDefinition.SpecDefinition
+            {
+                ValidBlockRegex = "[" // invalid regex -> Regex constructor will throw
+            }
+        };
+
+        var registry = new FileProcessorRegistry(new[] { def }, Microsoft.Extensions.Logging.Abstractions.NullLogger<FileProcessorRegistry>.Instance, Microsoft.Extensions.Logging.Abstractions.NullLoggerFactory.Instance);
+        var detected = new DetectedFile(true, ".abc");
+
+        // Act & Assert: registry should catch the detailed error and rethrow a generic InvalidOperationException
+        var ex = Assert.Throws<InvalidOperationException>(() => registry.Resolve(detected));
+        Assert.Equal("Failed to create processor for the requested format.", ex.Message);
     }
 }

@@ -1,5 +1,6 @@
 using FileService.Api.Services;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.FileProviders;
 using System.IO;
 using Xunit;
@@ -51,28 +52,56 @@ public class FileFormatDetectorTests
             ? new PhysicalFileProvider(env.WebRootPath)
             : new NullFileProvider();
         var loader = new FormatConfigLoader(env);
-        return new FileFormatDetector(loader);
+        return new FileFormatDetector(loader, NullLogger<FileFormatDetector>.Instance);
+    }
+
+    private static string FindSamplePath(string sampleName, string fallbackFileName)
+    {
+        var dir = new DirectoryInfo(Directory.GetCurrentDirectory());
+        while (dir != null)
+        {
+            var testCandidate = Path.Combine(dir.FullName, "FileService.Api.Tests", "Samples", sampleName);
+            if (File.Exists(testCandidate))
+                return testCandidate;
+
+            dir = dir.Parent;
+        }
+
+        return fallbackFileName;
     }
 
     [Fact]
     public void Detect_AbcExtension_ReturnsKnownFormat()
     {
         var det = CreateDetector();
-        var result = det.Detect("something.ABC", null);
+        var sample = FindSamplePath("MyFile.abc", "something.ABC");
+        var result = det.Detect(sample);
 
         Assert.True(result.IsKnown);
-        Assert.Equal("ABC", result.FormatId);
-        Assert.Equal("text/plain", result.ContentType);
+        Assert.Equal(".abc", result.Extension);
+        // ContentType removed from DetectedFile; the detector always treats files as application/octet-stream
     }
 
     [Fact]
     public void Detect_UnknownExtension_ReturnsUnknown()
     {
         var det = CreateDetector();
-        var result = det.Detect("file.unknownext", "text/plain");
+        var sample = FindSamplePath("UnknownFormat.xyz", "file.unknownext");
+        var result = det.Detect(sample);
 
         Assert.False(result.IsKnown);
-        Assert.Null(result.FormatId);
-        Assert.Equal("text/plain", result.ContentType);
+        Assert.Equal(".xyz", result.Extension);
+        // ContentType removed from DetectedFile; the detector always treats files as application/octet-stream
+    }
+
+    [Fact]
+    public void Detect_FileNameWithMultipleDots_ReturnsAbc()
+    {
+        var det = CreateDetector();
+        var sample = "MyFile.Benign.abc";
+        var result = det.Detect(sample);
+
+        Assert.True(result.IsKnown);
+        Assert.Equal(".abc", result.Extension);
     }
 }

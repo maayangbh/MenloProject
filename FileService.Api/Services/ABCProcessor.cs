@@ -4,7 +4,6 @@ namespace FileService.Api.Services;
 
 public class AbcProcessor : IFileProcessor
 {
-    public string FormatId => "ABC";
 
     public async Task<ProcessResult> ProcessAsync(Stream input, Stream output, DetectedFile detected, CancellationToken ct)
     {

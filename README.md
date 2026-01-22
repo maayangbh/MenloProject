@@ -25,31 +25,38 @@ The architecture is **extensible** and **stream-based**. Additional file formats
 
 ## Supported File Formats
 
-Formats are defined in `FileService.Api/Config/formats.yaml`. Each entry specifies:
+Formats are defined in `FileService.Api/Config/formats.yaml`. The project uses a compact schema where each format has an `id`, a plain `extension` (without a leading dot), an optional `description`, and a nested `spec` block containing validation/sanitization rules.
 
-- id: Format name (e.g. ABC, XYZ, XVAR)
-- extension: File extension (e.g. .abc)
-- prefix/suffix: Header/footer bytes (optional)
-- blockLength: Fixed block size (optional)
-- blockPattern: Regex for variable-length blocks (optional)
-- validRegex: Regex for block validation (optional)
-- replacement: Replacement for invalid blocks
-- errorToken: (optional)
-- notes: Description
+Top-level fields:
+- `id`: Format identifier (e.g. `ABC`)
+- `description`: Short human-readable description (optional)
+- `extension`: File extension without leading dot (e.g. `abc`)
+- `spec`: Nested object with format-specific rules
+
+Spec fields:
+- `prefix`: Header bytes (string) required at file start (optional)
+- `suffix`: Footer bytes (string) required at file end (optional)
+- `validBlockRegex`: Regex that must fully match a block to be considered valid
+- `errorBlockReplacement`: Replacement text for invalid blocks
+- `blockPattern`: Alternative variable-block regex (optional)
+- `maxBlockLength`: Maximum allowed block length before treating as invalid (optional)
+
+Notes:
+- `contentType` is no longer specified in the YAML. The service will use the uploaded file's MIME type if provided, or fall back to `application/octet-stream`.
+- `blockLength` (fixed-size blocks) is no longer required; blocks are validated using regexes (`validBlockRegex` or `blockPattern`).
 
 ### Example: ABC Format
 
 ```yaml
+formats:
   - id: ABC
-    contentType: text/plain
-    extension: .abc
-    prefix: "123"
-    suffix: "789"
-    blockLength: 3
-    validRegex: "^A[1-9]C$"
-    replacement: "A255C"
-    errorToken: ""
-    notes: "Built-in ABC rules"
+    description: "Built-in ABC rules"
+    extension: abc
+    spec:
+      prefix: "123"
+      suffix: "789"
+      validBlockRegex: "^(A[1-9]C)+$"
+      errorBlockReplacement: "A255C"
 ```
 
 ### Example: Variable-length Block Format

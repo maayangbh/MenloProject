@@ -25,6 +25,10 @@ public class FormatConfigLoader
 
         var defs = deserializer.Deserialize<FormatDefinitions>(yaml);
         if (defs == null) return Array.Empty<FormatDefinition>();
+
+        // Rely solely on `Spec` nested fields; do not copy them into top-level properties.
+
         return defs.Formats;
     }
 }
+
